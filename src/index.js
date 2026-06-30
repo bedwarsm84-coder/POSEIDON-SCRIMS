@@ -29,11 +29,9 @@ const cmdDir = path.join(__dirname, 'commands');
 for (const file of fs.readdirSync(cmdDir).filter(f => f.endsWith('.js'))) {
   const mod = require(path.join(cmdDir, file));
 
-  // Some files export multiple commands (e.g. leaderboard.js)
   if (mod.data) {
     client.commands.set(mod.data.name, mod);
   } else {
-    // Multi-export file
     for (const [, cmd] of Object.entries(mod)) {
       if (cmd?.data) client.commands.set(cmd.data.name, cmd);
     }
@@ -55,7 +53,15 @@ for (const file of fs.readdirSync(evtDir).filter(f => f.endsWith('.js'))) {
 
 // ── MongoDB ───────────────────────────────────────────────────────
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('✅ MongoDB connected'))
+  .then(() => {
+    console.log('✅ MongoDB connected');
+
+    // Start the API server once MongoDB is ready
+    const { createApiServer } = require('./api/server');
+    const app  = createApiServer();
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => console.log(`🌐 API server listening on port ${PORT}`));
+  })
   .catch(err => { console.error('❌ MongoDB error:', err); process.exit(1); });
 
 // ── Login ─────────────────────────────────────────────────────────
