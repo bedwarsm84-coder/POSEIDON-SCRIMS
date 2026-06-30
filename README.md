@@ -47,3 +47,27 @@ cp .env.example .env
 
 # Edit .env with your values
 nano .env   # or open in any text editor
+
+DISCORD_TOKEN=       ← from step 1
+CLIENT_ID=           ← from step 1
+GUILD_ID=            ← right-click your server → Copy ID
+MONGODB_URI=         ← from step 3
+
+SCRIM_RESULTS_CHANNEL=   ← #scrim-results channel ID
+LEADERBOARD_CHANNEL=     ← #leaderboard channel ID
+ANNOUNCEMENTS_CHANNEL=   ← #announcements channel ID
+QUEUE_CHANNEL=           ← #looking-for-scrim channel ID
+LOG_CHANNEL=             ← #logs (staff) channel ID
+
+VERIFIED_ROLE=       ← Verified role ID
+CLAN_LEADER_ROLE=    ← (optional) auto-assign role
+STAFF_ROLE=          ← Staff role ID (for dispute pings)
+
+# Deploy slash commands to your server (only needs to run once)
+npm run deploy
+
+# Start the bot
+npm start
+
+# Or for development with auto-restart:
+npm run dev
