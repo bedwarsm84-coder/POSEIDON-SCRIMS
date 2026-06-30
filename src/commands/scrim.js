@@ -144,4 +144,109 @@ module.exports = {
     else if (sub === 'status') {
       const entries = await Queue.find().sort({ queuedAt: 1 });
       await interaction.reply({ embeds: [queueEmbed(entries)] });
-                                                                    }
+             }
+    // ── START ───────────────────────────────────────────────────────
+    else if (sub === 'start') {
+      const scrimId = interaction.options.getString('scrim_id');
+      const scrim   = await Scrim.findById(scrimId).catch(() => null);
+      if (!scrim) return interaction.reply({ embeds: [errorEmbed('Scrim not found.')], ephemeral: true });
+      if (scrim.status !== 'scheduled') return interaction.reply({ embeds: [errorEmbed(`Scrim status is already **${scrim.status}**.`)], ephemeral: true });
+
+      // Must be one of the leaders
+      const clan1 = await Clan.findById(scrim.clan1Id);
+      const clan2 = await Clan.findById(scrim.clan2Id);
+      if (userId !== clan1.leaderId && userId !== clan2.leaderId) {
+        return interaction.reply({ embeds: [errorEmbed('Only the clan leaders of this scrim can start it.')], ephemeral: true });
+      }
+
+      scrim.status    = 'live';
+      scrim.startedAt = new Date();
+      await scrim.save();
+
+      // Update live embed if exists
+      if (scrim.embedMessageId && scrim.embedChannelId) {
+        const ch = interaction.guild.channels.cache.get(scrim.embedChannelId);
+        const msg = await ch?.messages.fetch(scrim.embedMessageId).catch(() => null);
+        if (msg) await msg.edit({ embeds: [scrimLiveEmbed(scrim, clan1, clan2)] });
+      }
+
+      await interaction.reply({ embeds: [successEmbed(`Scrim **${clan1.name} vs ${clan2.name}** is now **LIVE**! 🔴`)] });
+    }
+
+    // ── RESULT ──────────────────────────────────────────────────────
+    else if (sub === 'result') {
+      const scrimId   = interaction.options.getString('scrim_id');
+      const yourScore = interaction.options.getInteger('your_score');
+      const oppScore  = interaction.options.getInteger('opp_score');
+      const proof     = interaction.options.getString('proof');
+
+      const scrim = await Scrim.findById(scrimId).catch(() => null);
+      if (!scrim) return interaction.reply({ embeds: [errorEmbed('Scrim not found.')], ephemeral: true });
+      if (!['live','scheduled'].includes(scrim.status)) return interaction.reply({
+        embeds: [errorEmbed(`Scrim status is **${scrim.status}** — cannot submit result.`)],
+        ephemeral: true,
+      });
+
+      const clan1 = await Clan.findById(scrim.clan1Id);
+      const clan2 = await Clan.findById(scrim.clan2Id);
+      const isClan1 = userId === clan1.leaderId;
+      const isClan2 = userId === clan2.leaderId;
+      if (!isClan1 && !isClan2) return interaction.reply({ embeds: [errorEmbed('Only clan leaders can submit results.')], ephemeral: true });
+
+      // Set scores from submitter's perspective
+      scrim.score.clan1 = isClan1 ? yourScore : oppScore;
+      scrim.score.clan2 = isClan1 ? oppScore  : yourScore;
+
+      const winnerId = scrim.score.clan1 > scrim.score.clan2 ? clan1._id : clan2._id;
+      const winner   = scrim.score.clan1 > scrim.score.clan2 ? clan1 : clan2;
+      const loser    = winner._id.equals(clan1._id) ? clan2 : clan1;
+
+      scrim.winnerId     = winnerId;
+      scrim.winnerName   = winner.name;
+      scrim.status       = 'pending_result';
+      scrim.proofUrl     = proof;
+      scrim.submittedBy  = userId;
+      scrim.endedAt      = new Date();
+      await scrim.save();
+
+      const embed = resultSubmittedEmbed(scrim, clan1, clan2, winner, loser);
+      const buttons = confirmButtons(scrim._id.toString());
+
+      // DM the opponent leader to confirm
+      const opponentLeaderId = isClan1 ? clan2.leaderId : clan1.leaderId;
+      const opponentUser = await interaction.client.users.fetch(opponentLeaderId).catch(() => null);
+      if (opponentUser) {
+        await opponentUser.send({
+          content: `🔔 **${interaction.user.username}** submitted a result for your scrim. Please confirm or dispute:`,
+          embeds: [embed],
+          components: [buttons],
+        }).catch(() => {});
+      }
+
+      await interaction.reply({
+        embeds: [embed],
+        content: `Result submitted! Waiting for <@${opponentLeaderId}> to confirm.`,
+      });
+    }
+
+    // ── CANCEL ──────────────────────────────────────────────────────
+    else if (sub === 'cancel') {
+      const scrimId = interaction.options.getString('scrim_id');
+      const scrim   = await Scrim.findById(scrimId).catch(() => null);
+      if (!scrim) return interaction.reply({ embeds: [errorEmbed('Scrim not found.')], ephemeral: true });
+
+      const clan1 = await Clan.findById(scrim.clan1Id);
+      const clan2 = await Clan.findById(scrim.clan2Id);
+      if (userId !== clan1.leaderId && userId !== clan2.leaderId) {
+        return interaction.reply({ embeds: [errorEmbed('Only clan leaders of this scrim can cancel it.')], ephemeral: true });
+      }
+      if (['completed','cancelled'].includes(scrim.status)) {
+        return interaction.reply({ embeds: [errorEmbed('This scrim is already finished.')], ephemeral: true });
+      }
+
+      scrim.status = 'cancelled';
+      await scrim.save();
+      await interaction.reply({ embeds: [successEmbed(`Scrim **${clan1.name} vs ${clan2.name}** has been cancelled.`)] });
+    }
+  },
+};
