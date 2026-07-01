@@ -1,136 +1,193 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
+// ── Cyberpunk Atlantis Color Palette ────────────────────────────
 const COLORS = {
-  primary:  0x00DDFF,
+  primary:  0x00FFEE,
   gold:     0xFFD60A,
   success:  0x00FF88,
   danger:   0xFF2D55,
   warning:  0xFF9500,
-  neutral:  0x1E3A5F,
+  neutral:  0x0A1628,
+  purple:   0xBF00FF,
 };
 
-const TRIDENT = '🔱';
+// ── UI Constants ─────────────────────────────────────────────────
+const TRIDENT   = '🔱';
+const DIV       = '▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰';
+const DIV_SHORT = '▰▰▰▰▰▰▰▰▰▰▰▰';
+const BULLET    = '▸';
 
-// ── Leaderboard embed ────────────────────────────────────────────
+// ── /leaderboard ─────────────────────────────────────────────────
 function leaderboardEmbed(clans, season) {
-  const medals = ['🥇','🥈','🥉'];
+  const medals = ['🥇', '🥈', '🥉'];
 
   const rows = clans.slice(0, 10).map((c, i) => {
-    const rank  = medals[i] || `\`${String(i + 1).padStart(2, ' ')}\``;
-    const total = c.stats.wins + c.stats.losses;
-    const wr    = total === 0 ? '—' : `${Math.round(c.stats.wins / total * 100)}%`;
-    const kd    = c.stats.deaths === 0 ? c.stats.kills : (c.stats.kills / c.stats.deaths).toFixed(2);
-    const tier  = c.rank ?? { emoji: '🥉' };
-    const streak = c.stats.streak > 0 ? ` 🔥${c.stats.streak}` : '';
-    return `${rank} ${tier.emoji} **[${c.tag}] ${c.name}** — ${c.stats.elo} ELO | ${c.stats.wins}W/${c.stats.losses}L | WR: ${wr} | KD: ${kd}${streak}`;
+    const rank   = medals[i] || `\`#${String(i + 1).padStart(2, '0')}\``;
+    const total  = c.stats.wins + c.stats.losses;
+    const wr     = total === 0 ? '—' : `${Math.round(c.stats.wins / total * 100)}%`;
+    const kd     = c.stats.deaths === 0 ? c.stats.kills : (c.stats.kills / c.stats.deaths).toFixed(2);
+    const tier   = c.rank ?? { emoji: '🥉' };
+    const streak = c.stats.streak >= 3 ? ` 🔥**${c.stats.streak}**` : c.stats.streak <= -3 ? ` ❄️${Math.abs(c.stats.streak)}` : '';
+    return `${rank} ${tier.emoji} **[${c.tag}] ${c.name}**\n> ⚡ \`${c.stats.elo} ELO\` ${BULLET} ${c.stats.wins}W/${c.stats.losses}L ${BULLET} WR: ${wr} ${BULLET} KD: ${kd}${streak}`;
   });
 
   return new EmbedBuilder()
     .setColor(COLORS.gold)
-    .setTitle(`${TRIDENT} POSEIDON SCRIMS — Season ${season} Leaderboard`)
-    .setDescription(rows.join('\n') || '*No clans ranked yet.*')
-    .setFooter({ text: `POSEIDON SCRIMS • Updated` })
+    .setTitle(`${TRIDENT}  POSEIDON SCRIMS — SEASON ${season}`)
+    .setDescription(
+      `\`\`\`ansi\n[2;36m⚡ LEADERBOARD PROTOCOL ACTIVE[0m\n\`\`\`` +
+      `${DIV}\n\n` +
+      (rows.join('\n\n') || '*— NO CLANS RANKED YET —*') +
+      `\n\n${DIV}`
+    )
+    .setFooter({ text: `${TRIDENT} POSEIDON SCRIMS  •  SEASON ${season}  •  LIVE DATA` })
     .setTimestamp();
 }
 
-// ── Scrim matched embed ──────────────────────────────────────────
+// ── /scrim queue → match found ────────────────────────────────────
 function scrimMatchedEmbed(scrim, clan1, clan2) {
   return new EmbedBuilder()
     .setColor(COLORS.primary)
-    .setTitle(`⚡ SCRIM MATCHED`)
-    .setDescription(`**[${clan1.tag}] ${clan1.name}** vs **[${clan2.tag}] ${clan2.name}**`)
-    .addFields(
-      { name: 'Mode',   value: scrim.mode,           inline: true },
-      { name: 'Map',    value: scrim.map || 'TBD',   inline: true },
-      { name: 'Status', value: '🟡 Scheduled',       inline: true },
+    .setTitle(`⚡  MATCH FOUND — INITIATING SCRIM PROTOCOL`)
+    .setDescription(
+      `\`\`\`ansi\n[2;36m▸ MATCHMAKING COMPLETE[0m\n\`\`\`` +
+      `${DIV}\n` +
+      `**${BULLET} [${clan1.tag}] ${clan1.name}**\n` +
+      `> ⚡ \`${clan1.stats?.elo ?? 1000} ELO\`\n\n` +
+      `\`\`\`\n         — VS —\n\`\`\`` +
+      `**${BULLET} [${clan2.tag}] ${clan2.name}**\n` +
+      `> ⚡ \`${clan2.stats?.elo ?? 1000} ELO\`\n` +
+      `${DIV}`
     )
-    .setFooter({ text: 'Use /scrim start once both teams are ready!' })
+    .addFields(
+      { name: '🗺️  MAP',       value: `\`${scrim.map || 'TBD'}\``,  inline: true },
+      { name: '🎮  MODE',      value: `\`${scrim.mode}\``,           inline: true },
+      { name: '📋  SCRIM ID',  value: `\`${scrim._id}\``,            inline: false },
+    )
+    .setFooter({ text: `${TRIDENT} Both leaders: /scrim start [id] when ready` })
     .setTimestamp();
 }
 
-// ── Live scrim embed ─────────────────────────────────────────────
+// ── /scrim start → live embed ─────────────────────────────────────
 function scrimLiveEmbed(scrim, clan1, clan2) {
+  const s1 = scrim.score?.clan1 ?? 0;
+  const s2 = scrim.score?.clan2 ?? 0;
+
   return new EmbedBuilder()
     .setColor(COLORS.danger)
-    .setTitle(`🔴 LIVE — ${clan1.name} vs ${clan2.name}`)
-    .setDescription(`**Mode:** ${scrim.mode} | **Map:** ${scrim.map || 'TBD'}`)
-    .addFields(
-      { name: `[${clan1.tag}] ${clan1.name}`, value: `Score: **${scrim.score.clan1}**\nKills: ${scrim.kills.clan1}`, inline: true },
-      { name: '\u200B', value: '**VS**', inline: true },
-      { name: `[${clan2.tag}] ${clan2.name}`, value: `Score: **${scrim.score.clan2}**\nKills: ${scrim.kills.clan2}`, inline: true },
+    .setTitle(`🔴  LIVE SCRIM — ${clan1.name}  vs  ${clan2.name}`)
+    .setDescription(
+      `\`\`\`ansi\n[2;31m▸ COMBAT PROTOCOL ACTIVE[0m\n\`\`\`` +
+      `${DIV}\n` +
+      `\`\`\`\n  ${clan1.name.padEnd(14)} ${String(s1).padStart(2)}  —  ${String(s2).padEnd(2)} ${clan2.name}\n\`\`\`` +
+      `${DIV}`
     )
-    .setFooter({ text: `Scrim ID: ${scrim._id} • Submit result with /scrim result` })
+    .addFields(
+      { name: '🗺️  MAP',   value: `\`${scrim.map || 'TBD'}\``,  inline: true },
+      { name: '🎮  MODE',  value: `\`${scrim.mode}\``,           inline: true },
+    )
+    .setFooter({ text: `${TRIDENT} ID: ${scrim._id}  •  /scrim result [id] to submit` })
     .setTimestamp();
 }
 
-// ── Result submitted embed ───────────────────────────────────────
+// ── /scrim result → pending confirm ──────────────────────────────
 function resultSubmittedEmbed(scrim, clan1, clan2, winner, loser) {
+  const s1 = scrim.score?.clan1 ?? 0;
+  const s2 = scrim.score?.clan2 ?? 0;
+
   return new EmbedBuilder()
     .setColor(COLORS.success)
-    .setTitle(`✅ SCRIM RESULT — ${clan1.name} vs ${clan2.name}`)
-    .setDescription(`🏆 **${winner.name}** wins!`)
-    .addFields(
-      { name: 'Final Score', value: `**${clan1.name}** ${scrim.score.clan1} — ${scrim.score.clan2} **${clan2.name}**`, inline: false },
-      { name: 'Mode',   value: scrim.mode,         inline: true },
-      { name: 'Map',    value: scrim.map || '—',   inline: true },
+    .setTitle(`${TRIDENT}  SCRIM RESULT SUBMITTED`)
+    .setDescription(
+      `\`\`\`ansi\n[2;32m▸ AWAITING CONFIRMATION[0m\n\`\`\`` +
+      `${DIV}\n` +
+      `🏆  **${winner.name}** WINS\n\n` +
+      `\`\`\`\n  ${clan1.name.padEnd(14)} ${String(s1).padStart(2)}  —  ${String(s2).padEnd(2)} ${clan2.name}\n\`\`\`` +
+      `${DIV}`
     )
-    .setFooter({ text: 'Result pending opponent confirmation — ELO will update once confirmed' })
+    .addFields(
+      { name: '🎮  MODE',  value: `\`${scrim.mode}\``,          inline: true },
+      { name: '🗺️  MAP',   value: `\`${scrim.map || '—'}\``,   inline: true },
+    )
+    .setFooter({ text: `${TRIDENT} ELO updates once opponent confirms` })
     .setTimestamp();
 }
 
-// ── Clan info embed ──────────────────────────────────────────────
+// ── /clan info & /stats clan ──────────────────────────────────────
 function clanInfoEmbed(clan) {
   const total  = clan.stats.wins + clan.stats.losses;
   const wr     = total === 0 ? '—' : `${Math.round(clan.stats.wins / total * 100)}%`;
   const kd     = clan.stats.deaths === 0 ? `${clan.stats.kills}` : (clan.stats.kills / clan.stats.deaths).toFixed(2);
-  const tier   = clan.rank ?? { emoji: '🥉', name: 'Bronze' };
-  const streak = clan.stats.streak > 0 ? `🔥 ${clan.stats.streak} win streak` : clan.stats.streak < 0 ? `❄️ ${Math.abs(clan.stats.streak)} loss streak` : '—';
+  const tier   = clan.rank ?? { emoji: '🥉', name: 'Bronze', color: '#CD7F32' };
+  const streak = clan.stats.streak > 0
+    ? `🔥 ${clan.stats.streak} WIN STREAK`
+    : clan.stats.streak < 0
+    ? `❄️ ${Math.abs(clan.stats.streak)} LOSS STREAK`
+    : '—';
 
   return new EmbedBuilder()
     .setColor(COLORS.primary)
-    .setTitle(`${TRIDENT} [${clan.tag}] ${clan.name}`)
-    .addFields(
-      { name: '👑 Leader',  value: `<@${clan.leaderId}>`,           inline: true },
-      { name: '👥 Members', value: `${clan.memberIds.length} / 8`,  inline: true },
-      { name: '📅 Season',  value: `${clan.season}`,                inline: true },
-      { name: `${tier.emoji} Rank`, value: tier.name,                inline: true },
-      { name: '⚡ ELO',     value: `${clan.stats.elo}`,             inline: true },
-      { name: '🏔️ Peak ELO',value: `${clan.stats.peakElo}`,        inline: true },
-      { name: '🏆 Wins',    value: `${clan.stats.wins}`,            inline: true },
-      { name: '💀 Losses',  value: `${clan.stats.losses}`,          inline: true },
-      { name: '🎮 Scrims',  value: `${clan.stats.scrims}`,          inline: true },
-      { name: '🎯 Win Rate',value: wr,                               inline: true },
-      { name: '⚔️  K/D',    value: kd,                              inline: true },
-      { name: '📈 Streak',  value: streak,                          inline: true },
+    .setTitle(`${TRIDENT}  [${clan.tag}]  ${clan.name.toUpperCase()}`)
+    .setDescription(
+      `\`\`\`ansi\n[2;36m${tier.emoji}  ${tier.name.toUpperCase()}  •  ⚡ ${clan.stats.elo} ELO[0m\n\`\`\`` +
+      `${DIV}`
     )
-    .setFooter({ text: `POSEIDON SCRIMS • Season ${clan.season}` })
+    .addFields(
+      { name: '▰ SEASON STATS', value:
+        `🏆 Wins \`${clan.stats.wins}\`\n` +
+        `💀 Losses \`${clan.stats.losses}\`\n` +
+        `🎯 Win Rate \`${wr}\`\n` +
+        `⚔️ K/D \`${kd}\`\n` +
+        `📈 Streak \`${streak}\`\n` +
+        `🏔️ Peak ELO \`${clan.stats.peakElo}\``,
+        inline: true
+      },
+      { name: '▰ ROSTER', value:
+        `👑 Leader <@${clan.leaderId}>\n` +
+        `👥 Members \`${clan.memberIds.length} / 8\`\n` +
+        `🎮 Scrims \`${clan.stats.scrims}\`\n` +
+        `📅 Season \`${clan.season}\``,
+        inline: true
+      },
+    )
+    .setFooter({ text: `${TRIDENT} POSEIDON SCRIMS  •  SEASON ${clan.season}` })
     .setTimestamp();
 }
 
-// ── Queue status embed ───────────────────────────────────────────
+// ── /scrim status → queue list ────────────────────────────────────
 function queueEmbed(entries) {
   const lines = entries.map((e, i) =>
-    `\`${i + 1}.\` **[${e.clanName}]** — ${e.mode} | Map: ${e.mapPref} | <t:${Math.floor(e.queuedAt / 1000)}:R>`
+    `\`#${i + 1}\` **[${e.clanName}]**\n> 🎮 \`${e.mode}\` ${BULLET} 🗺️ \`${e.mapPref}\` ${BULLET} ⏱️ <t:${Math.floor(new Date(e.queuedAt).getTime() / 1000)}:R>`
   );
+
   return new EmbedBuilder()
     .setColor(COLORS.warning)
-    .setTitle('⏳ SCRIM QUEUE')
-    .setDescription(lines.join('\n') || '*Queue is empty — be the first!*')
-    .setFooter({ text: 'Use /scrim queue to join' })
+    .setTitle(`⏳  SCRIM QUEUE — ${entries.length} CLAN${entries.length !== 1 ? 'S' : ''} WAITING`)
+    .setDescription(
+      `\`\`\`ansi\n[2;33m▸ MATCHMAKING PROTOCOL SCANNING...[0m\n\`\`\`` +
+      `${DIV}\n\n` +
+      (lines.join('\n\n') || '*— QUEUE EMPTY — BE THE FIRST —*') +
+      `\n\n${DIV}`
+    )
+    .setFooter({ text: `${TRIDENT} /scrim queue [mode] to join` })
     .setTimestamp();
 }
 
-// ── Error embed ──────────────────────────────────────────────────
+// ── Error embed ───────────────────────────────────────────────────
 function errorEmbed(msg) {
-  return new EmbedBuilder().setColor(COLORS.danger).setDescription(`❌ ${msg}`);
+  return new EmbedBuilder()
+    .setColor(COLORS.danger)
+    .setDescription(`\`\`\`ansi\n[2;31m✖  SYSTEM ERROR[0m\n\`\`\`${DIV_SHORT}\n❌  ${msg}\n${DIV_SHORT}`);
 }
 
-// ── Success embed ────────────────────────────────────────────────
+// ── Success embed ─────────────────────────────────────────────────
 function successEmbed(msg) {
-  return new EmbedBuilder().setColor(COLORS.success).setDescription(`✅ ${msg}`);
+  return new EmbedBuilder()
+    .setColor(COLORS.success)
+    .setDescription(`\`\`\`ansi\n[2;32m✔  SYSTEM OK[0m\n\`\`\`${DIV_SHORT}\n✅  ${msg}\n${DIV_SHORT}`);
 }
 
-// ── Confirm/Dispute buttons ──────────────────────────────────────
+// ── Confirm/Dispute buttons ───────────────────────────────────────
 function confirmButtons(scrimId) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
