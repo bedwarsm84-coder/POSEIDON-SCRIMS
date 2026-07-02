@@ -77,6 +77,18 @@ module.exports = {
         $set: { 'stats.elo': loserNewElo, 'stats.streak': loserNewStreak },
       });
 
+      // Sync rank roles for both clans
+      const { syncClanRoles } = require('../utils/roles');
+      const guild = interaction.guild;
+      const [updatedWinner, updatedLoser] = await Promise.all([
+        Clan.findById(winner._id),
+        Clan.findById(loser._id),
+      ]);
+      await Promise.all([
+        syncClanRoles(guild, updatedWinner),
+        syncClanRoles(guild, updatedLoser),
+      ]);
+
       // Post in results channel
       const resultsChannel = interaction.client.guilds.cache
         .first()?.channels.cache.get(process.env.SCRIM_RESULTS_CHANNEL);
