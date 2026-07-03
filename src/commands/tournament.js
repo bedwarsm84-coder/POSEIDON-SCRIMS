@@ -7,10 +7,13 @@ const TRIDENT = '🔱';
 const DIV     = '▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰';
 const MODES   = ['BW-4v4','BW-2v2','SW-4v4','SW-2v2'];
 
+// ── Bracket generator (single elimination) ───────────────────────
 function generateBracket(clanIds, clanNames) {
   const matches = [];
   let round = 1;
   const pairs = [...clanIds];
+
+  // Pad with byes if needed
   while (pairs.length & (pairs.length - 1)) pairs.push(null);
 
   for (let i = 0; i < pairs.length; i += 2) {
@@ -32,6 +35,7 @@ function generateBracket(clanIds, clanNames) {
   return matches;
 }
 
+// ── Bracket embed ─────────────────────────────────────────────────
 function bracketEmbed(t) {
   const rounds = [...new Set(t.matches.map(m => m.round))].sort((a, b) => a - b);
 
@@ -57,8 +61,8 @@ function bracketEmbed(t) {
       (t.status === 'completed' ? `\n🏆  **WINNER: ${t.winnerName}**` : `\n📋  Round **${t.currentRound}** in progress`)
     )
     .addFields(
-      { name: '🎮 Mode',   value: `\`${t.mode}\``,                 inline: true },
-      { name: '👥 Clans',  value: `\`${t.clanIds.length}\``,       inline: true },
+      { name: '🎮 Mode',   value: `\`${t.mode}\``,              inline: true },
+      { name: '👥 Clans',  value: `\`${t.clanIds.length}\``,    inline: true },
       { name: '📊 Status', value: `\`${t.status.toUpperCase()}\``, inline: true },
     )
     .setFooter({ text: `${TRIDENT} POSEIDON SCRIMS  •  TOURNAMENT` })
@@ -70,6 +74,7 @@ module.exports = {
     .setName('tournament')
     .setDescription('Tournament management')
 
+    // /tournament create
     .addSubcommand(sub => sub
       .setName('create')
       .setDescription('Create a new tournament (Staff only)')
@@ -81,14 +86,20 @@ module.exports = {
         .addChoices({ name: '4', value: 4 }, { name: '8', value: 8 }, { name: '16', value: 16 })
       )
     )
+
+    // /tournament register
     .addSubcommand(sub => sub
       .setName('register')
       .setDescription('Register your clan for the active tournament')
     )
+
+    // /tournament bracket
     .addSubcommand(sub => sub
       .setName('bracket')
       .setDescription('View the current tournament bracket')
     )
+
+    // /tournament result
     .addSubcommand(sub => sub
       .setName('result')
       .setDescription('Submit a tournament match result (Staff only)')
@@ -98,6 +109,8 @@ module.exports = {
       .addIntegerOption(o => o.setName('score1').setDescription('Clan 1 score').setRequired(true))
       .addIntegerOption(o => o.setName('score2').setDescription('Clan 2 score').setRequired(true))
     )
+
+    // /tournament start
     .addSubcommand(sub => sub
       .setName('start')
       .setDescription('Start the tournament and generate bracket (Staff only)')
@@ -108,11 +121,13 @@ module.exports = {
     const sub    = interaction.options.getSubcommand();
     const userId = interaction.user.id;
 
+    // Staff check helper
     const isStaff = () => {
       const staffId = process.env.STAFF_ROLE;
       return !staffId || interaction.member.roles.cache.has(staffId);
     };
 
+    // ── CREATE ────────────────────────────────────────────────────
     if (sub === 'create') {
       if (!isStaff()) return interaction.reply({ embeds: [errorEmbed('Staff only.')], ephemeral: true });
 
@@ -132,6 +147,7 @@ module.exports = {
       });
     }
 
+    // ── REGISTER ──────────────────────────────────────────────────
     else if (sub === 'register') {
       const clan = await Clan.findOne({ leaderId: userId });
       if (!clan) return interaction.reply({ embeds: [errorEmbed('Only clan leaders can register.')], ephemeral: true });
@@ -159,12 +175,14 @@ module.exports = {
       });
     }
 
+    // ── BRACKET ───────────────────────────────────────────────────
     else if (sub === 'bracket') {
       const t = await Tournament.findOne({ status: { $in: ['active', 'completed'] } }).sort({ createdAt: -1 });
       if (!t) return interaction.reply({ embeds: [errorEmbed('No active tournament found.')], ephemeral: true });
       await interaction.reply({ embeds: [bracketEmbed(t)] });
     }
 
+    // ── START ─────────────────────────────────────────────────────
     else if (sub === 'start') {
       if (!isStaff()) return interaction.reply({ embeds: [errorEmbed('Staff only.')], ephemeral: true });
 
@@ -173,6 +191,7 @@ module.exports = {
       if (!t) return interaction.reply({ embeds: [errorEmbed('Tournament not found.')], ephemeral: true });
       if (t.clanIds.length < 2) return interaction.reply({ embeds: [errorEmbed('Need at least 2 clans to start.')], ephemeral: true });
 
+      // Shuffle clans for random seeding
       const shuffled = [...t.clanIds].map((id, i) => ({ id, name: t.clanNames[i] }))
         .sort(() => Math.random() - 0.5);
 
@@ -183,6 +202,8 @@ module.exports = {
       await t.save();
 
       const embed = bracketEmbed(t);
+
+      // Post bracket in announcements
       const ch = interaction.guild.channels.cache.get(process.env.ANNOUNCEMENTS_CHANNEL);
       if (ch) {
         const msg = await ch.send({ embeds: [embed] });
@@ -194,6 +215,7 @@ module.exports = {
       await interaction.reply({ embeds: [embed] });
     }
 
+    // ── RESULT ────────────────────────────────────────────────────
     else if (sub === 'result') {
       if (!isStaff()) return interaction.reply({ embeds: [errorEmbed('Staff only.')], ephemeral: true });
 
@@ -210,7 +232,7 @@ module.exports = {
       const match = roundMatches[matchIndex];
       if (!match) return interaction.reply({ embeds: [errorEmbed(`Match #${matchIndex + 1} not found in round ${t.currentRound}.`)], ephemeral: true });
 
-      const winner = match.clan1Name.toUpperCase() === winnerTag
+      const winner = match.clan1Name.toUpperCase() === winnerTag || match.clan1Name === winnerTag
         ? { id: match.clan1Id, name: match.clan1Name }
         : { id: match.clan2Id, name: match.clan2Name };
 
@@ -220,6 +242,7 @@ module.exports = {
       match.winnerName  = winner.name;
       match.status      = 'completed';
 
+      // Check if round is complete
       const allDone = t.matches.filter(m => m.round === t.currentRound).every(m => m.status !== 'pending');
 
       if (allDone) {
@@ -228,10 +251,12 @@ module.exports = {
           .map(m => ({ id: m.winnerId, name: m.winnerName }));
 
         if (winners.length === 1) {
+          // Tournament over
           t.status     = 'completed';
           t.winnerId   = winners[0].id;
           t.winnerName = winners[0].name;
         } else {
+          // Next round
           t.currentRound++;
           const nextMatches = generateBracket(winners.map(w => w.id), winners.map(w => w.name));
           nextMatches.forEach(m => { m.round = t.currentRound; t.matches.push(m); });
@@ -242,6 +267,8 @@ module.exports = {
       await t.save();
 
       const embed = bracketEmbed(t);
+
+      // Update live bracket embed if exists
       if (t.embedMessageId && t.embedChannelId) {
         const ch  = interaction.guild.channels.cache.get(t.embedChannelId);
         const msg = await ch?.messages.fetch(t.embedMessageId).catch(() => null);
