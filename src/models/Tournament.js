@@ -23,16 +23,24 @@ const TournamentSchema = new Schema({
   name:       { type: String, required: true },
   mode:       { type: String, enum: ['BW-4v4','BW-2v2','SW-4v4','SW-2v2'], required: true },
   status:     { type: String, enum: ['registration', 'active', 'completed', 'cancelled'], default: 'registration' },
-  maxClans:   { type: Number, default: 8 },
+  maxClans:   { type: Number, default: 8 },   // 4, 8, or 16
   season:     { type: Number, default: 1 },
-  createdBy:  String,
+  createdBy:  String,   // Discord user ID
+
+  // Registered clans
   clanIds:    [{ type: Schema.Types.ObjectId, ref: 'Clan' }],
   clanNames:  [String],
+
+  // Bracket
   rounds:     { type: Number, default: 0 },
   currentRound: { type: Number, default: 1 },
   matches:    [MatchSchema],
+
+  // Winner
   winnerId:   { type: Schema.Types.ObjectId, ref: 'Clan' },
   winnerName: String,
+
+  // Discord message for live bracket embed
   embedMessageId: String,
   embedChannelId: String,
 }, { timestamps: true });
